@@ -147,7 +147,7 @@ a{color:inherit}:focus-visible{outline:3px solid var(--agar);outline-offset:3px}
 details{margin:12px 0}summary{cursor:pointer}cite{display:block;color:var(--muted)}
 dialog{width:min(720px,94vw);max-height:92vh;padding:24px;border:1px solid var(--line);border-radius:12px;color:inherit;background:var(--paper)}dialog::backdrop{background:rgb(21 35 42 / .55)}
 label{display:grid;gap:4px;margin:12px 0;min-width:0}textarea{resize:vertical;width:100%}.row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:12px}
-.empty{padding:25px;border:1px dashed var(--line);border-radius:10px;text-align:center}.card .actions{margin-top:14px}
+.empty{padding:25px;border:1px dashed var(--line);border-radius:10px;text-align:center}.article-card{padding:10px 13px;margin:7px 0;font-size:14px}.article-card h3{font-size:17px;line-height:1.25}.article-card .meta{margin:3px 0;color:var(--muted)}.article-card details{margin:4px 0}.article-card .actions{margin-top:4px;gap:6px 10px}.article-card .actions button{padding:2px 8px}.article-card .chips span{padding:1px 7px;margin:2px 4px 2px 0;font-size:12px}
 .topic-grid{display:grid;grid-auto-rows:1fr;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .topic-card{text-align:left;padding:18px;min-inline-size:0;inline-size:100%;min-block-size:124px}
 .topic-card strong{display:block;font-size:23px}.topic-card span{display:block;margin-top:5px;color:var(--muted);font-size:14px;font-weight:400}.topic-tags{overflow-wrap:anywhere}
@@ -161,7 +161,7 @@ label{display:grid;gap:4px;margin:12px 0;min-width:0}textarea{resize:vertical;wi
 <label>Backup contents<textarea id="backupText" rows="5" readonly spellcheck="false"></textarea></label>
 </section>
 <p id="status" role="status">Your archive stays in this browser. DOI lookup sends the DOI to public metadata services.</p>
-<div class="filters"><input id="search" type="search" aria-label="Search archive" placeholder="Search titles, authors, notes or quotations"></div>
+<div class="filters"><input id="search" type="search" aria-label="Search archive" placeholder="Search titles, authors, notes or quotations"><select id="sectionTag" aria-label="Filter by tag" hidden><option value="">All tags</option></select></div>
 <div class="view-bar"><button id="backToTopics" type="button" hidden>Back to sections</button><h2 id="viewTitle">Sections</h2></div>
 <p id="count" aria-live="polite"></p><button id="unassigned" type="button" hidden></button><section id="records" aria-labelledby="viewTitle"></section>
 </main>
@@ -270,6 +270,7 @@ const articleCount = count => count + (count === 1 ? ' article' : ' articles');
 let activeTopic = null;
 function showTopic(topic) {
   activeTopic = topic;
+  $('sectionTag').value = '';
   render();
   $('backToTopics').focus();
 }
@@ -288,6 +289,12 @@ function render() {
   $('unassigned').textContent = 'Unassigned articles (' + unassignedCount + ')';
   $('backToTopics').hidden = topicView;
   archive.classList.toggle('topic-grid',topicView);
+  const tagFilter = $('sectionTag');
+  const selectedTag = activeTopic === null ? '' : tagFilter.value;
+  const sectionTags = activeTopic === null ? [] : uniqueTags(records.filter(record => activeTopic === '' ? !assigned(record) : record.purpose === activeTopic).flatMap(record => record.tags)).sort((a,b) => a.localeCompare(b,'tr'));
+  tagFilter.replaceChildren(new Option('All tags',''),...sectionTags.map(tag => new Option(tag,fold(tag))));
+  tagFilter.value = sectionTags.some(tag => fold(tag) === selectedTag) ? selectedTag : '';
+  tagFilter.hidden = activeTopic === null;
 
   if (topicView) {
     $('viewTitle').textContent = 'Sections';
@@ -313,26 +320,28 @@ function render() {
   }
 
   $('viewTitle').textContent = activeTopic === null ? 'Search results' : sectionLabel(activeTopic) || 'Unassigned articles';
-  const shown = records.filter(record => {
-    const matchesTopic = activeTopic === null || (activeTopic === '' ? !assigned(record) : record.purpose === activeTopic);
-    if (!matchesTopic || !query.length) return matchesTopic;
+  const section = records.filter(record => activeTopic === null || (activeTopic === '' ? !assigned(record) : record.purpose === activeTopic));
+  const shown = section.filter(record => {
+    if (tagFilter.value && !record.tags.some(tag => fold(tag) === tagFilter.value)) return false;
+    if (!query.length) return true;
     const contents = fold([...fields.map(field => record[field]),sectionLabel(record.purpose),...record.tags,...record.quotes.flatMap(q => [q.text,q.location])].join(' '));
     return query.every(word => contents.includes(word));
   });
   $('count').textContent = articleCount(shown.length);
   archive.replaceChildren(...shown.map(card));
-  if (!shown.length) archive.append(node('p',query.length ? 'No articles match your search.' : 'No articles in this section yet.','empty'));
+  if (!shown.length) archive.append(node('p',(query.length || tagFilter.value) ? 'No articles match your filters.' : 'No articles in this section yet.','empty'));
 }
 function card(record) {
-  const article = node('article','','card');
-  article.append(node('h3',record.title || record.doi),node('p',[record.authors,record.year].filter(Boolean).join(' · '),'meta'));
-  if (record.note) article.append(node('p',record.note,'note'));
+  const article = node('article','','card article-card');
+  article.append(node('h3',record.title || record.doi));
+  if (record.year) article.append(node('p',record.year,'meta'));
   const chips = node('div','','chips');
   [...record.tags,sectionLabel(record.purpose)].filter(Boolean).forEach(tag => chips.append(node('span',tag)));
-  article.append(chips);
-  if (record.abstract || record.quotes.length) {
+  if (chips.childElementCount) article.append(chips);
+  if (record.note || record.abstract || record.quotes.length) {
     const detail = node('details');
-    detail.append(node('summary','Abstract and quotations'));
+    detail.append(node('summary','Notes and details'));
+    if (record.note) detail.append(node('p',record.note,'note'));
     if (record.abstract) detail.append(node('p',record.abstract));
     record.quotes.forEach(quote => {
       const block = node('blockquote',quote.text);
@@ -531,6 +540,7 @@ $('addQuote').onclick = () => { quoteRow(); $('quotes').lastElementChild.querySe
 $('cancel').onclick = () => $('editor').close();
 $('editor').onclose = () => request?.abort();
 $('search').oninput = render;
+$('sectionTag').onchange = render;
 $('backToTopics').onclick = () => {
   activeTopic = null;
   $('search').value = '';
