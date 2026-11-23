@@ -148,9 +148,9 @@ details{margin:12px 0}summary{cursor:pointer}cite{display:block;color:var(--mute
 dialog{width:min(720px,94vw);max-height:92vh;padding:24px;border:1px solid var(--line);border-radius:12px;color:inherit;background:var(--paper)}dialog::backdrop{background:rgb(21 35 42 / .55)}
 label{display:grid;gap:4px;margin:12px 0;min-width:0}textarea{resize:vertical;width:100%}.row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:12px}
 .empty{padding:25px;border:1px dashed var(--line);border-radius:10px;text-align:center}.card .actions{margin-top:14px}
-.topic-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-.topic-card{text-align:left;padding:18px;min-inline-size:0;inline-size:100%;block-size:124px}
-.topic-card strong{display:block;font-size:23px}.topic-card span{display:block;margin-top:5px;color:var(--muted);font-size:14px;font-weight:400}.topic-latest{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topic-grid{display:grid;grid-auto-rows:1fr;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.topic-card{text-align:left;padding:18px;min-inline-size:0;inline-size:100%;min-block-size:124px}
+.topic-card strong{display:block;font-size:23px}.topic-card span{display:block;margin-top:5px;color:var(--muted);font-size:14px;font-weight:400}.topic-tags{overflow-wrap:anywhere}
 @media(max-width:540px){.row,.topic-grid{grid-template-columns:minmax(0,1fr)}.row{gap:0}dialog{padding:16px}}
 </style>
 <header><div><a class="brand" href="https://ugurlab.github.io/desk-and-bench/">Desk &amp; Bench</a><h1>PaperNotes</h1><p>Research articles, notes and quotations</p></div><button id="add" class="primary">Add article</button></header>
@@ -294,11 +294,19 @@ function render() {
     $('count').textContent = articleCount(records.length);
     archive.replaceChildren(...purposes.map(purpose => {
       const articles = records.filter(record => record.purpose === purpose);
-      const latest = articles[0];
+      const counts = new Map();
+      for (const article of articles) {
+        for (const tag of uniqueTags(article.tags)) {
+          const key = fold(tag);
+          const entry = counts.get(key) || {tag,count:0};
+          entry.count++;
+          counts.set(key,entry);
+        }
+      }
       const button = action('',() => showTopic(purpose),'topic-card');
-      const preview = node('span',latest ? 'Latest · ' + (latest.title || latest.doi) : 'No articles yet','topic-latest');
-      if (latest) preview.title = preview.textContent;
-      button.append(node('strong',sectionLabel(purpose)),node('span',articleCount(articles.length)),preview);
+      const labels = [...counts.values()].sort((a,b) => a.tag.localeCompare(b.tag,'tr'));
+      button.append(node('strong',sectionLabel(purpose)),node('span',articleCount(articles.length)),
+        node('span',labels.length ? 'Tags: ' + labels.map(({tag,count}) => tag + ' (' + count + ')').join(', ') : 'No tags yet','topic-tags'));
       return button;
     }));
     return;
